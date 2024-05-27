@@ -1,10 +1,10 @@
-# Fetching data asynchronously from MongoDB and sending it via the EventBus with Vert.x
+# Fetching data asynchronously from MongoDB and JSON Placeholder API and sending it via the EventBus with Vert.x
 
-![asynchronous-data-transport](https://github.com/uurkrtl/Fetching-And-Sending-Data-Asynchronously-With-Vert.x/assets/52300746/48565309-d414-44b9-9bed-8ba8be5db767)
+![asynchronous-data-exchange](https://github.com/uurkrtl/Fetching-And-Sending-Data-Asynchronously-With-Vert.x/assets/52300746/f8880d7b-c37f-40c7-8bed-d5994600f979)
 
-This repository demonstrates a clustered Vert.x application with asynchronous data exchange using EventBus, HTTP server setup, and MongoDB integration.
+This repository demonstrates a clustered Vert.x application with asynchronous data exchange using EventBus, HTTP server setup, JSON Placeholder API and MongoDB integration.
 
-To create an example Vert.x application that fetches data asynchronously from MongoDB and sends it via the EventBus, follow these steps:
+To create an example Vert.x application that fetches data asynchronously from MongoDB, JSON Placeholder API and sends it via the EventBus, follow these steps:
 
 ## 1. Create a Vert.x Project
 ```css
@@ -17,6 +17,7 @@ vertx-mongodb-eventbus
                 └── example
                     └── MainVerticle.java
                     └── MongoVerticle.java
+                    └── ApiFetchVerticle.java
                     └── EventBusVerticle.java
                     └── HttpServerVerticle.java
 
@@ -78,6 +79,7 @@ public class MainVerticle extends AbstractVerticle {
       if (res.succeeded()) {
         Vertx vertx = res.result();
         vertx.deployVerticle(new MongoVerticle());
+        vertx.deployVerticle(new ApiFetchVerticle());
         vertx.deployVerticle(new EventBusVerticle());
         vertx.deployVerticle(new HttpServerVerticle());
         LOGGER.info("Deployed {}", MainVerticle.class.getName());
@@ -134,6 +136,43 @@ public class MongoVerticle extends AbstractVerticle {
 }
 ```
 
+### ApiFetchVerticle
+Fetches data from API and sends it via the EventBus.
+```java
+import io.vertx.core.AbstractVerticle;
+import io.vertx.core.Promise;
+import io.vertx.core.http.HttpClient;
+import io.vertx.core.http.HttpMethod;
+import io.vertx.core.json.JsonObject;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+public class ApiFetchVerticle extends AbstractVerticle {
+  public static final Logger LOGGER = LoggerFactory.getLogger(ApiFetchVerticle.class);
+  public static final String API_DATA = "api.data";
+  public static final String API_URL = "jsonplaceholder.typicode.com";
+  public static final String QUERY_PARAMETER = "/posts/1";
+  private HttpClient client;
+
+  @Override
+  public void start(Promise<Void> startPromise) throws Exception {
+    client = vertx.createHttpClient();
+    vertx.setPeriodic(5000, id -> fetchDataAndSend());
+    startPromise.complete();
+  }
+
+  private void fetchDataAndSend() {
+    client.request(HttpMethod.GET, API_URL, QUERY_PARAMETER)
+      .compose(req -> req.send().compose(resp -> resp.body()))
+      .onSuccess(buffer -> {
+        JsonObject json = buffer.toJsonObject();
+        vertx.eventBus().send(API_DATA, json);
+      })
+      .onFailure(Throwable::printStackTrace);
+  }
+}
+```
+
 ### EventBusVerticle
 Listens for data sent from MongoVerticle to EventBus, processes it, and republishes it.
 ```java
@@ -146,19 +185,29 @@ import org.slf4j.LoggerFactory;
 
 public class EventBusVerticle extends AbstractVerticle {
   public static final Logger LOGGER = LoggerFactory.getLogger(EventBusVerticle.class);
-  public static final String PROCESSED_DATA = "processed.data";
+  public static final String PROCESSED_DB_DATA = "processed.db.data";
+  public static final String PROCESSED_API_DATA = "processed.api.data";
+  private JsonObject data = new JsonObject();
 
   @Override
   public void start(Promise<Void> startPromise) throws Exception {
-    vertx.eventBus().consumer(MongoVerticle.MONGO_DATA, this::handleMessage);
+    vertx.eventBus().consumer(MongoVerticle.MONGO_DATA, this::handleDbMessage);
+    vertx.eventBus().consumer(ApiFetchVerticle.API_DATA, this::handleApiMessage);
     startPromise.complete();
   }
 
-  private void handleMessage(Message<Object> message) {
-    JsonObject data = (JsonObject) message.body();
+  private void handleApiMessage(Message<Object> message) {
+    data = (JsonObject) message.body();
     data.put("processed", true);
-    LOGGER.info("Proccessing data: {}", data.encodePrettily());
-    vertx.eventBus().publish(PROCESSED_DATA,data);
+    LOGGER.info("Proccessing Api data: {}", data);
+    vertx.eventBus().publish(PROCESSED_API_DATA, data);
+  }
+
+  private void handleDbMessage(Message<Object> message) {
+    data = (JsonObject) message.body();
+    data.put("processed", true);
+    LOGGER.info("Proccessing DB data: {}", data.encodePrettily());
+    vertx.eventBus().publish(PROCESSED_DB_DATA, data);
   }
 }
 ```
@@ -177,13 +226,15 @@ public class HttpServerVerticle extends AbstractVerticle {
   public static final Logger LOGGER = LoggerFactory.getLogger(HttpServerVerticle.class);
   public static final int PORT = 8080;
   private JsonObject lastReceivedData = new JsonObject();
+  private JsonObject apiData = new JsonObject();
 
   @Override
   public void start(Promise<Void> startPromise) throws Exception {
     Router router = Router.router(vertx);
 
     // HTTP endpoint to get the latest data
-    router.get("/data").handler(ctx -> ctx.response().end(lastReceivedData.encodePrettily()));
+    router.get("/from-db").handler(ctx -> ctx.response().end(lastReceivedData.encodePrettily()));
+    router.get("/from-api").handler(ctx -> ctx.response().end(apiData.encodePrettily()));
 
     // Set up the HTTP server
     vertx.createHttpServer()
@@ -198,9 +249,14 @@ public class HttpServerVerticle extends AbstractVerticle {
       });
 
     // Listen to the EventBus for data
-    vertx.eventBus().<JsonObject>consumer(EventBusVerticle.PROCESSED_DATA, message -> {
+    vertx.eventBus().<JsonObject>consumer(EventBusVerticle.PROCESSED_DB_DATA, message -> {
       lastReceivedData = message.body();
-      LOGGER.info("Received data on EventBus: {}", lastReceivedData.encodePrettily());
+      LOGGER.info("Received data from db on EventBus: {}", lastReceivedData.encodePrettily());
+    });
+
+    vertx.eventBus().<JsonObject>consumer(EventBusVerticle.PROCESSED_API_DATA, message -> {
+      apiData = message.body();
+      LOGGER.info("Received data from api on EventBus: {}", apiData.encodePrettily());
     });
   }
 }

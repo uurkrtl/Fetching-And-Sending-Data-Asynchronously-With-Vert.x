@@ -11,13 +11,15 @@ public class HttpServerVerticle extends AbstractVerticle {
   public static final Logger LOGGER = LoggerFactory.getLogger(HttpServerVerticle.class);
   public static final int PORT = 8080;
   private JsonObject lastReceivedData = new JsonObject();
+  private JsonObject apiData = new JsonObject();
 
   @Override
   public void start(Promise<Void> startPromise) throws Exception {
     Router router = Router.router(vertx);
 
     // HTTP endpoint to get the latest data
-    router.get("/data").handler(ctx -> ctx.response().end(lastReceivedData.encodePrettily()));
+    router.get("/from-db").handler(ctx -> ctx.response().end(lastReceivedData.encodePrettily()));
+    router.get("/from-api").handler(ctx -> ctx.response().end(apiData.encodePrettily()));
 
     // Set up the HTTP server
     vertx.createHttpServer()
@@ -32,9 +34,14 @@ public class HttpServerVerticle extends AbstractVerticle {
       });
 
     // Listen to the EventBus for data
-    vertx.eventBus().<JsonObject>consumer(EventBusVerticle.PROCESSED_DATA, message -> {
+    vertx.eventBus().<JsonObject>consumer(EventBusVerticle.PROCESSED_DB_DATA, message -> {
       lastReceivedData = message.body();
-      LOGGER.info("Received data on EventBus: {}", lastReceivedData.encodePrettily());
+      LOGGER.info("Received data from db on EventBus: {}", lastReceivedData.encodePrettily());
+    });
+
+    vertx.eventBus().<JsonObject>consumer(EventBusVerticle.PROCESSED_API_DATA, message -> {
+      apiData = message.body();
+      LOGGER.info("Received data from api on EventBus: {}", apiData.encodePrettily());
     });
   }
 }

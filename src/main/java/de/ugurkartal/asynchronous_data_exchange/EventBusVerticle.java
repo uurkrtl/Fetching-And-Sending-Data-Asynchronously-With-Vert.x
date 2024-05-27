@@ -9,18 +9,28 @@ import org.slf4j.LoggerFactory;
 
 public class EventBusVerticle extends AbstractVerticle {
   public static final Logger LOGGER = LoggerFactory.getLogger(EventBusVerticle.class);
-  public static final String PROCESSED_DATA = "processed.data";
+  public static final String PROCESSED_DB_DATA = "processed.db.data";
+  public static final String PROCESSED_API_DATA = "processed.api.data";
+  private JsonObject data = new JsonObject();
 
   @Override
   public void start(Promise<Void> startPromise) throws Exception {
-    vertx.eventBus().consumer(MongoVerticle.MONGO_DATA, this::handleMessage);
+    vertx.eventBus().consumer(MongoVerticle.MONGO_DATA, this::handleDbMessage);
+    vertx.eventBus().consumer(ApiFetchVerticle.API_DATA, this::handleApiMessage);
     startPromise.complete();
   }
 
-  private void handleMessage(Message<Object> message) {
-    JsonObject data = (JsonObject) message.body();
+  private void handleApiMessage(Message<Object> message) {
+    data = (JsonObject) message.body();
     data.put("processed", true);
-    LOGGER.info("Proccessing data: {}", data.encodePrettily());
-    vertx.eventBus().publish(PROCESSED_DATA,data);
+    LOGGER.info("Proccessing Api data: {}", data);
+    vertx.eventBus().publish(PROCESSED_API_DATA, data);
+  }
+
+  private void handleDbMessage(Message<Object> message) {
+    data = (JsonObject) message.body();
+    data.put("processed", true);
+    LOGGER.info("Proccessing DB data: {}", data.encodePrettily());
+    vertx.eventBus().publish(PROCESSED_DB_DATA, data);
   }
 }

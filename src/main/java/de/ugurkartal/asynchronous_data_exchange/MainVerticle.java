@@ -18,6 +18,7 @@ public class MainVerticle extends AbstractVerticle {
       if (res.succeeded()) {
         Vertx vertx = res.result();
         vertx.deployVerticle(new MongoVerticle());
+        vertx.deployVerticle(new ApiFetchVerticle());
         vertx.deployVerticle(new EventBusVerticle());
         vertx.deployVerticle(new HttpServerVerticle());
         LOGGER.info("Deployed {}", MainVerticle.class.getName());
