@@ -1,6 +1,6 @@
 # Fetching data asynchronously from MongoDB and JSON Placeholder API and sending it via the EventBus with Vert.x
 
-![asynchronous-data-exchange](https://github.com/uurkrtl/Fetching-And-Sending-Data-Asynchronously-With-Vert.x/assets/52300746/f8880d7b-c37f-40c7-8bed-d5994600f979)
+![asynchronous-data-exchange](https://github.com/uurkrtl/Fetching-And-Sending-Data-Asynchronously-With-Vert.x/assets/52300746/415d4394-c999-459c-9101-3330d10d90a0)
 
 This repository demonstrates a clustered Vert.x application with asynchronous data exchange using EventBus, HTTP server setup, JSON Placeholder API and MongoDB integration.
 
