@@ -1,5 +1,7 @@
 # Fetching data asynchronously from MongoDB and sending it via the EventBus with Vert.x
 
+![asynchronous-data-transport](https://github.com/uurkrtl/Fetching-And-Sending-Data-Asynchronously-With-Vert.x/assets/52300746/48565309-d414-44b9-9bed-8ba8be5db767)
+
 This repository demonstrates a clustered Vert.x application with asynchronous data exchange using EventBus, HTTP server setup, and MongoDB integration.
 
 To create an example Vert.x application that fetches data asynchronously from MongoDB and sends it via the EventBus, follow these steps:
@@ -101,6 +103,7 @@ import io.vertx.core.json.JsonObject;
 import io.vertx.ext.mongo.MongoClient;
 
 public class MongoVerticle extends AbstractVerticle {
+  public static final String MONGO_DATA = "mongo.data";
   private MongoClient mongoClient;
 
   @Override
@@ -121,7 +124,7 @@ public class MongoVerticle extends AbstractVerticle {
     mongoClient.find("customer", new JsonObject(), res -> {
       if (res.succeeded()) {
         res.result().forEach(doc -> {
-          vertx.eventBus().send(EventBusVerticle.ADDRESS, doc);
+          vertx.eventBus().send(MONGO_DATA, doc);
         });
       } else {
         res.cause().printStackTrace();
@@ -130,6 +133,36 @@ public class MongoVerticle extends AbstractVerticle {
   }
 }
 ```
+
+### EventBusVerticle
+Listens for data sent from MongoVerticle to EventBus, processes it, and republishes it.
+```java
+import io.vertx.core.AbstractVerticle;
+import io.vertx.core.Promise;
+import io.vertx.core.eventbus.Message;
+import io.vertx.core.json.JsonObject;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+public class EventBusVerticle extends AbstractVerticle {
+  public static final Logger LOGGER = LoggerFactory.getLogger(EventBusVerticle.class);
+  public static final String PROCESSED_DATA = "processed.data";
+
+  @Override
+  public void start(Promise<Void> startPromise) throws Exception {
+    vertx.eventBus().consumer(MongoVerticle.MONGO_DATA, this::handleMessage);
+    startPromise.complete();
+  }
+
+  private void handleMessage(Message<Object> message) {
+    JsonObject data = (JsonObject) message.body();
+    data.put("processed", true);
+    LOGGER.info("Proccessing data: {}", data.encodePrettily());
+    vertx.eventBus().publish(PROCESSED_DATA,data);
+  }
+}
+```
+
 ### HttpServerVerticle
 Sets up an HTTP server that responds with data received from the EventBus.
 ```java
@@ -150,11 +183,7 @@ public class HttpServerVerticle extends AbstractVerticle {
     Router router = Router.router(vertx);
 
     // HTTP endpoint to get the latest data
-    router.get("/data").handler(ctx -> {
-      ctx.response()
-        .putHeader("content-type", "application/json")
-        .end(lastReceivedData.encodePrettily());
-    });
+    router.get("/data").handler(ctx -> ctx.response().end(lastReceivedData.encodePrettily()));
 
     // Set up the HTTP server
     vertx.createHttpServer()
@@ -169,7 +198,7 @@ public class HttpServerVerticle extends AbstractVerticle {
       });
 
     // Listen to the EventBus for data
-    vertx.eventBus().<JsonObject>consumer("fetch.data", message -> {
+    vertx.eventBus().<JsonObject>consumer(EventBusVerticle.PROCESSED_DATA, message -> {
       lastReceivedData = message.body();
       LOGGER.info("Received data on EventBus: {}", lastReceivedData.encodePrettily());
     });
@@ -177,36 +206,6 @@ public class HttpServerVerticle extends AbstractVerticle {
 }
 ```
 
-### EventBusVerticle
-Listens for data on the EventBus, processes it, and republishes it.
-```java
-import io.vertx.core.AbstractVerticle;
-import io.vertx.core.Promise;
-import io.vertx.core.json.JsonObject;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
-public class EventBusVerticle extends AbstractVerticle {
-  public static final Logger LOGGER = LoggerFactory.getLogger(EventBusVerticle.class);
-  public static final String ADDRESS = "fetch.data";
-
-  @Override
-  public void start(Promise<Void> startPromise) throws Exception {
-    vertx.setPeriodic(5000, id -> {
-      vertx.eventBus().request(ADDRESS, "", reply -> {
-        if (reply.succeeded()) {
-          JsonObject data = (JsonObject) reply.result().body();
-          LOGGER.info("Received data: {}", data);
-        } else {
-          LOGGER.error("Failed to fetch data: {}", reply.cause().getMessage());
-        }
-      });
-    });
-
-    startPromise.complete();
-  }
-}
-```
 ## Running the Application
 To see clustering in action, follow these steps:
 

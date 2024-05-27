@@ -6,6 +6,7 @@ import io.vertx.core.json.JsonObject;
 import io.vertx.ext.mongo.MongoClient;
 
 public class MongoVerticle extends AbstractVerticle {
+  public static final String MONGO_DATA = "mongo.data";
   private MongoClient mongoClient;
 
   @Override
@@ -25,9 +26,7 @@ public class MongoVerticle extends AbstractVerticle {
   private void fetchDataAndSend() {
     mongoClient.find("customer", new JsonObject(), res -> {
       if (res.succeeded()) {
-        res.result().forEach(doc -> {
-          vertx.eventBus().send(EventBusVerticle.ADDRESS, doc);
-        });
+        res.result().forEach(doc -> vertx.eventBus().send(MONGO_DATA, doc));
       } else {
         res.cause().printStackTrace();
       }

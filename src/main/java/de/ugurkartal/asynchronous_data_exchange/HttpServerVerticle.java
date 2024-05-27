@@ -17,11 +17,7 @@ public class HttpServerVerticle extends AbstractVerticle {
     Router router = Router.router(vertx);
 
     // HTTP endpoint to get the latest data
-    router.get("/data").handler(ctx -> {
-      ctx.response()
-        .putHeader("content-type", "application/json")
-        .end(lastReceivedData.encodePrettily());
-    });
+    router.get("/data").handler(ctx -> ctx.response().end(lastReceivedData.encodePrettily()));
 
     // Set up the HTTP server
     vertx.createHttpServer()
@@ -36,7 +32,7 @@ public class HttpServerVerticle extends AbstractVerticle {
       });
 
     // Listen to the EventBus for data
-    vertx.eventBus().<JsonObject>consumer("fetch.data", message -> {
+    vertx.eventBus().<JsonObject>consumer(EventBusVerticle.PROCESSED_DATA, message -> {
       lastReceivedData = message.body();
       LOGGER.info("Received data on EventBus: {}", lastReceivedData.encodePrettily());
     });
