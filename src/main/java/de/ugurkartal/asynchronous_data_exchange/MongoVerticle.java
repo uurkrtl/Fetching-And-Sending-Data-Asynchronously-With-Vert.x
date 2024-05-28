@@ -24,12 +24,8 @@ public class MongoVerticle extends AbstractVerticle {
   }
 
   private void fetchDataAndSend() {
-    mongoClient.find("customer", new JsonObject(), res -> {
-      if (res.succeeded()) {
-        res.result().forEach(doc -> vertx.eventBus().send(MONGO_DATA, doc));
-      } else {
-        res.cause().printStackTrace();
-      }
-    });
+    mongoClient.find("customer", new JsonObject())
+        .onSuccess(res -> res.forEach(doc -> vertx.eventBus().send(MONGO_DATA, doc)))
+        .onFailure(Throwable::printStackTrace);
   }
 }
